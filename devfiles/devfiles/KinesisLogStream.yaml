@@ -1,0 +1,358 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to build the resources for the Kinesis Data Streams
+Parameters:
+  BuildNumber:
+    Type: String
+    Description: uat1 or prod1
+  BambiAccountARN:
+    Type: String
+    Description: ARN of Bambi Account
+
+Resources:
+## Resources for CloudWatch Kinesis Stream
+
+
+## Data Streams
+
+  KinesisDataStreamAudit:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Join
+        - ''
+        - - AFL-Audit-Logs-
+          - !Ref BuildNumber
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamModeDetails:
+        StreamMode: PROVISIONED
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: AUDIT
+        - Key: EC2LogPath
+          Value: varlogaudit
+
+  KinesisDataStreamMessages:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Join
+        - ''
+        - - AFL-Messages-Logs-
+          - !Ref BuildNumber
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamModeDetails:
+        StreamMode: PROVISIONED
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: MESSAGES
+        - Key: EC2LogPath
+          Value: varlogmessages
+
+  KinesisDataStreamSecure:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Join
+        - ''
+        - - AFL-Secure-Logs-
+          - !Ref BuildNumber
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamModeDetails:
+        StreamMode: PROVISIONED
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: SECURE
+        - Key: EC2LogPath
+          Value: varlogsecure
+
+  KinesisDataStreamWinSecurity:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Join
+        - ''
+        - - AFL-WinSecurity-Logs-
+          - !Ref BuildNumber
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamModeDetails:
+        StreamMode: PROVISIONED
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: WINSECURE
+        - Key: WindowsEvent
+          Value: Security
+
+  KinesisDataStreamWinApplication:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Join
+        - ''
+        - - AFL-WinApplication-Logs-
+          - !Ref BuildNumber
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamModeDetails:
+        StreamMode: PROVISIONED
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: WINAPPLICATION
+        - Key: WindowsEvent
+          Value: Application
+
+  KinesisDataStreamWinSystem:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Join
+        - ''
+        - - AFL-WinSystem-Logs-
+          - !Ref BuildNumber
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamModeDetails:
+        StreamMode: PROVISIONED
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: WINSYSTEM
+        - Key: WindowsEvent
+          Value: System
+
+
+  ## Log Group Streams
+
+ # CWLogGroupAudit:
+#    Type: AWS::Logs::LogGroup
+#    Properties:
+#      LogGroupName: AUDIT
+#      RetentionInDays: 30
+#      Tags:
+#        - Key: CreatedBy
+#          Value: !Ref AWS::StackName
+#        - Key: CloudWatchLogGroup
+#          Value: AUDIT
+#  CWLogGroupMessages:
+#    Type: AWS::Logs::LogGroup
+#    Properties:
+#      LogGroupName: MESSAGES
+#      RetentionInDays: 30
+#      Tags:
+#        - Key: CreatedBy
+#          Value: !Ref AWS::StackName
+#        - Key: CloudWatchLogGroup
+#          Value: MESSAGES
+#  CWLogGroupSecure:
+#    Type: AWS::Logs::LogGroup
+#    Properties:
+#      LogGroupName: SECURE
+#      RetentionInDays: 30
+#      Tags:
+#        - Key: CreatedBy
+#          Value: !Ref AWS::StackName
+#        - Key: CloudWatchLogGroup
+#          Value: SECURE
+
+  CWLogGroupWinSystem:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: WINSYSTEM
+      RetentionInDays: 30
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: WINSYSTEM
+
+  CWLogGroupWinSecurity:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: WINSECURITY
+      RetentionInDays: 30
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: WINSECURITY
+
+
+  CWLogGroupWinApplication:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: WINAPPLICATION
+      RetentionInDays: 30
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+        - Key: CloudWatchLogGroup
+          Value: WINAPPLICATION
+
+  ## IAM Role for CloudWatch to push data to the Kinesis Data Stream
+
+  CWLogGrouptoKinesisRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: "sts:AssumeRole"
+            Principal:
+              Service:
+                - logs.amazonaws.com
+            Effect: Allow
+      RoleName: CWLogGrouptoKinesisRole
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+
+  CWLogtoKinesisPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CWLogtoKinesis
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - kinesis:PutRecord
+            Resource:
+              - !GetAtt KinesisDataStreamMessages.Arn
+              - !GetAtt KinesisDataStreamSecure.Arn
+              - !GetAtt KinesisDataStreamAudit.Arn
+              - !GetAtt KinesisDataStreamWinApplication.Arn
+              - !GetAtt KinesisDataStreamWinSecurity.Arn
+              - !GetAtt KinesisDataStreamWinSystem.Arn
+            Sid: CWLogtoKinesis
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'
+      Roles:
+        - !Ref CWLogGrouptoKinesisRole
+
+
+
+## IAM Role to be assumed by Bambi Splunk
+
+  BambiKinesisAssumeRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: "sts:AssumeRole"
+            Principal:
+              AWS: !Ref BambiAccountARN
+            Effect: Allow
+      RoleName: BambiKinesisAssumeRole
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+
+  BambiKinesisAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: BambiKinesisAccessPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - kinesis:GetShardIterator
+              - kinesis:GetRecords
+              - kinesis:DescribeStream
+            Resource:
+              - !GetAtt KinesisDataStreamMessages.Arn
+              - !GetAtt KinesisDataStreamSecure.Arn
+              - !GetAtt KinesisDataStreamAudit.Arn
+              - !GetAtt KinesisDataStreamWinApplication.Arn
+              - !GetAtt KinesisDataStreamWinSecurity.Arn
+              - !GetAtt KinesisDataStreamWinSystem.Arn
+            Sid: CWLogtoKinesis
+          - Effect: Allow
+            Action:
+              - kinesis:ListStreams
+            Resource:
+              - '*'
+            Sid: BambiKinesisList
+      Roles:
+        - !Ref BambiKinesisAssumeRole
+
+
+  ## Subscription Filter for Log Group to allow publishing of data to Kinesis Data Stream
+
+  CWLogGroupSubAudit:
+    DependsOn:
+      - CWLogGrouptoKinesisRole
+      - CWLogtoKinesisPolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisDataStreamAudit.Arn
+      FilterPattern: ""
+      LogGroupName: AUDIT
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'
+
+  CWLogGroupSubMessages:
+    DependsOn:
+      - CWLogGrouptoKinesisRole
+      - CWLogtoKinesisPolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisDataStreamMessages.Arn
+      FilterPattern: ""
+      LogGroupName: MESSAGES
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'
+
+  CWLogGroupSubSecure:
+    DependsOn:
+      - CWLogGrouptoKinesisRole
+      - CWLogtoKinesisPolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisDataStreamSecure.Arn
+      FilterPattern: ""
+      LogGroupName: SECURE
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'
+
+  CWLogGroupSubWinSecurity:
+    DependsOn:
+      - CWLogGrouptoKinesisRole
+      - CWLogtoKinesisPolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisDataStreamWinSecurity.Arn
+      FilterPattern: ""
+      LogGroupName: WINSECURITY
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'
+
+  CWLogGroupSubWinSystem:
+    DependsOn:
+      - CWLogGrouptoKinesisRole
+      - CWLogtoKinesisPolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisDataStreamWinSystem.Arn
+      FilterPattern: ""
+      LogGroupName: WINSYSTEM
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'
+
+  CWLogGroupSubWinApplication:
+    DependsOn:
+      - CWLogGrouptoKinesisRole
+      - CWLogtoKinesisPolicy
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisDataStreamWinApplication.Arn
+      FilterPattern: ""
+      LogGroupName: WINAPPLICATION
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CWLogGrouptoKinesisRole'

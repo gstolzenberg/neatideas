@@ -10,10 +10,6 @@ Parameters:
     Default: Model
     Type: String
   BuildNumber:
-  
-  sd;lkfgld;skfg;ksdf;lgkskdfgls;dgd
-  
-  
     Type: String
   AFLMISVPCStackName:
     Type: String
