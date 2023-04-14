@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ## Shell script to SSH onto each application group
-
+## blah blah
 ## Pass Variables
 
 AWS_ACCOUNT_NAME=$(aws iam list-account-aliases --output text | awk '{print $2}')
