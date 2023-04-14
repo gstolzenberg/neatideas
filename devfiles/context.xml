@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- The contents of this file will be loaded for each web application -->
+<Context>
+
+    <!-- Default set of monitored resources. If one of these changes, the    -->
+    <!-- web application will be reloaded.                                   -->
+    <WatchedResource>WEB-INF/web.xml</WatchedResource>
+    <WatchedResource>${catalina.base}/conf/web.xml</WatchedResource>
+
+    <!-- Uncomment this to disable session persistence across Tomcat restarts -->
+    <!--
+    <Manager pathname="" />
+    -->
+
+    <!-- Uncomment this to enable Comet connection tacking (provides events
+         on session expiration as well as webapp lifecycle) -->
+    <!--
+    <Valve className="org.apache.catalina.valves.CometConnectionManagerValve" />
+    -->
+
+    <Resource name="jdbc/content"
+              auth="Container"
+              factory="com.zaxxer.hikari.HikariJNDIFactory"
+              type="javax.sql.DataSource"
+              minimumIdle="5"
+              maximumPoolSize="20"
+              connectionTimeout="300000"
+              maxActive="100"
+              maxWait="10000"
+              jdbcUrl="jdbc:oracle:thin:@wemdatabase-r2.BUILD.HOSTEDZONE:1521:ORCL"
+              dataSource.implicitCachingEnabled="true"
+              dataSource.user="wem_cds"
+              dataSource.password="WEMCDSPASSWORD"
+              driverClassName="oracle.jdbc.driver.OracleDriver" />
+
+</Context>

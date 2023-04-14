@@ -1,0 +1,862 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to build the resouces used by the EPG application
+Parameters:
+  EnvironmentValue:
+    AllowedValues:
+      - Model
+      - Production
+      - Region2-Production
+      - Region2-Model
+    Default: Model
+    Type: String
+  BuildNumber:
+    Type: String
+  AFLMISVPCStackName:
+    Type: String
+    Default: ''
+    Description: Name of the CloudFormation Stack that created the MIS VPC, e.g. VPC-AFLMIS
+  EKSWorkerSecurityGroup:
+    Type: String
+    Default: ''
+    Description: ID of Security Group assigned to MIS EKS Worker nodes, e.g. sg-080ae3589e448782e
+  EKSManagerIAMRole:
+    Type: String
+    Default: ''
+    Description: ARN of EKS Manager Role created in MIS EKS Cluster Stack, e.g. arn:aws:iam::506679533104:role/EKSManagerRole-AFLMIS-EKSCluster-uat1mis
+  EKSWorkerIAMRole:
+    Type: String
+    Default: ''
+    Description: ARN of EKS Worker Role created in MIS EKS Cluster Stack, e.g. arn:aws:iam::506679533104:role/EKSManagerRole-AFLMIS-EKSCluster-uat1mis
+  EKSManagerSecurityGroup:
+    Type: String
+    Default: ''
+    Description: ID of Security Group assigned to EKS Manager node, e.g. sg-0ea76de9bdadbcf1e
+  AliasDomain:
+    Description: Please specify a comma separated list (no spaces)of domain names to be used as cnames within this distribution eg epg.mediaservices.com.au
+    Type: String
+  DistributionDescription:
+    Description: Provide a comment which describes the usage of this CloudFront Distribution
+    Type: String
+  AccessLogBucket:
+    Description: Please specify the name of the Access log bucket eg telstra-afl-test-cloudfront-logs.s3.amazonaws.com
+    Type: String
+  AccessLogPrefix:
+    Description: Please specify the prefix to be used in the Access log bucket eg epg
+    Type: String
+  CertificateArn:
+    Description: Please specify the ARN of the required SSL Certificate, must be in us-east-1 region eg. arn:aws:acm:us-east-1:506679533104:certificate/e8303f0f-3c0e-4db8-891d-38b8f60a32bd
+    Type: String
+  ThumbnailsS3BucketName:
+    Description:    Please specify the thumbnail S3 bucket name eg telstra-afl-test-epg-thumbnails.s3.amazonaws.com
+    Type:           String
+  WAFACLID:
+    Description: ID of the WAF Web ACL to apply to this CloudFront Distribution. If no WAF ACL required leave this field blank
+    Type: String
+  FriendlyDNSRequired:
+    Description: Is a Friendly DNS record required for this distribution
+    Type: String
+    AllowedValues:
+      - Yes
+      - No
+  FriendlyDNSName:
+    Description: Name of the friendly DNS name to be created for this distribution e.g. epg.mediaservices.com.au
+    Type: String
+  ExternalZoneId:
+    Description: Route53 Zone ID of the external zone to create the friendly DNS entry e.g. Z37PJCQL268JHT
+    Type: String
+  EPGThumbnailMinTTL:
+    Description: Minimum TTL used for EPGThumbnails
+    Default: 0
+    Type: String
+  EPGThumbnailMaxTTL:
+    Description: Maximum TTL used for EPGThumbnails
+    Default: 31536000
+    Type: String
+  EPGThumbnailDefaultTTL:
+    Description: Default TTL used for EPGThumbnails
+    Default: 30
+    Type: String
+  OriginAccessIdentity:
+    Description:    ID of the Origin Access Identity to associate with the CloudFront Distribution. Obtain from CloudFront console, eg E1LLTM2D0QTO1A
+    Type:           String
+  RobotUserId:
+    Description: ID of the robot user in IAM used by Gravity to upload files to S3
+    Type: String
+  S3ESBackup:
+    Description: S3 bucket used for Manual ES snapshots
+    Type: String
+
+Mappings:
+  Environments:
+    Production:
+      ApplicationVPCId: vpc-0a9fad6f
+      MISDeliveryImage: ami-03ef79711d6499a84
+      MISStatsProImage: ami-03ef79711d6499a84
+      eccenvironment: prod1mis
+      HostedZoneName: afl.internal.
+      LDAP: ldap.afl.local
+      s3bootfiles: telstra-afl-prod-bootfiles
+      s3epguploads: ta-mis-epg-upload-prod
+      s3epgthumbnails: telstra-afl-prod-epg-thumbnails
+      EC2KeyName: ProdAFLKey
+      ELBLogBucket: telstra-afl-prod-elblogs
+      DNSResolver: 10.3.0.2
+      BillingEnvironmentTag: AFL-Production
+    Region2-Production:
+      ApplicationVPCId: ''
+      MISDeliveryImage: ''
+      MISStatsProImage: ''
+      eccenvironment: proddr1mis
+      HostedZoneName: ''
+      LDAP: ''
+      s3bootfiles: ''
+      s3epguploads: ''
+      s3epgthumbnails: ''
+      s3Champion: ''
+      EC2KeyName: ''
+      ELBLogBucket: ''
+      DNSResolver: 10.103.0.2
+      BillingEnvironmentTag: AFL-Production
+    Model:
+      ManagementVPCId: vpc-61a68a04
+      ApplicationVPCId: vpc-60a68a05
+      CrossAccountVPCId: vpc-67a68a02
+      SharedServicesVPCId: vpc-66a68a03
+      MISDeliveryImage: ami-03ef79711d6499a84
+      MISStatsProImage: ami-03ef79711d6499a84
+      eccenvironment: uat1mis
+      HostedZoneName: test.afl.internal.
+      LDAP: ldap.test.afl.local
+      s3bootfiles: telstra-afl-test-bootfiles
+      s3epguploads: ta-mis-epg-upload-test
+      s3epgthumbnails: telstra-afl-test-epg-thumbnails
+      EC2KeyName: test-mgmtVPC-key
+      ELBLogBucket: telstra-afl-elblogs
+      DNSResolver: 10.203.0.2
+      BillingEnvironmentTag: AFL-Test
+    Region2-Model:
+      ManagementVPCId: vpc-fda7479a
+      ApplicationVPCId: vpc-fea74799
+      CrossAccountVPCId: vpc-ffa74798
+      SharedServicesVPCId: vpc-fca7479b
+      MISDeliveryImage: ''
+      MISStatsProImage: ''
+      eccenvironment: uatdr1mis
+      HostedZoneName: test.afl.internal.
+      LDAP: ldap.test2.afl.local
+      s3bootfiles: telstra-afl-test-bootfiles-oregon
+      s3epguploads: ''
+      s3epgthumbnails: ''
+      s3Champion: ''
+      EC2KeyName: test-oregon-key
+      ELBLogBucket: telstra-afl-elblogs-oregon
+      DNSResolver: 10.213.0.2
+      BillingEnvironmentTag: AFL-Test
+  SubnetCIDR:
+    Production:
+      ManagementVPCCIDR: 10.1.0.0/16
+      ApplicationVPCCIDR: 10.3.0.0/16
+      CrossAccountVPCCIDR: 10.4.0.0/16
+      SharedServicesVPCCIDR: 10.2.0.0/16
+      AllHostsCIDR: 10.0.0.0/8
+      SubnetApplicationVPCPublicAZaCIDR: 10.3.0.0/24
+      SubnetApplicationVPCPublicAZbCIDR: 10.3.20.0/24
+      SubnetApplicationVPCPublicAZcCIDR: 10.3.40.0/24
+      SubnetApplicationVPCThreatGatewayAZaCIDR: 10.3.1.0/24
+      SubnetApplicationVPCThreatGatewayAZbCIDR: 10.3.21.0/24
+      SubnetApplicationVPCThreatGatewayAZcCIDR: 10.3.41.0/24
+      SubnetApplicationVPCProxyAZaCIDR: 10.3.2.0/24
+      SubnetApplicationVPCProxyAZbCIDR: 10.3.22.0/24
+      SubnetApplicationVPCProxyAZcCIDR: 10.3.42.0/24
+      SubnetApplicationVPCCacheAZaCIDR: 10.3.3.0/24
+      SubnetApplicationVPCCacheAZbCIDR: 10.3.23.0/24
+      SubnetApplicationVPCCacheAZcCIDR: 10.3.43.0/24
+      SubnetApplicationVPCWebAZaCIDR: 10.3.4.0/24
+      SubnetApplicationVPCWebAZbCIDR: 10.3.24.0/24
+      SubnetApplicationVPCWebAZcCIDR: 10.3.44.0/24
+      SubnetApplicationVPCAppAZaCIDR: 10.3.5.0/24
+      SubnetApplicationVPCAppAZbCIDR: 10.3.25.0/24
+      SubnetApplicationVPCAppAZcCIDR: 10.3.45.0/24
+      SubnetApplicationVPCDatabaseAZaCIDR: 10.3.6.0/24
+      SubnetApplicationVPCDatabaseAZbCIDR: 10.3.26.0/24
+      SubnetApplicationVPCDatabaseAZcCIDR: 10.3.46.0/24
+      SubnetApplicationVPCStorageAZaCIDR: 10.3.7.0/24
+      SubnetApplicationVPCStorageAZbCIDR: 10.3.27.0/24
+      SubnetApplicationVPCStorageAZcCIDR: 10.3.47.0/24
+      SubnetApplicationVPCCryptoAZaCIDR: 10.3.8.0/24
+      SubnetApplicationVPCCryptoAZbCIDR: 10.3.28.0/24
+      SubnetApplicationVPCCryptoAZcCIDR: 10.3.48.0/24
+      SubnetApplicationVPCHSMAZaCIDR: 10.3.9.0/24
+      SubnetApplicationVPCHSMAZbCIDR: 10.3.29.0/24
+      SubnetApplicationVPCHSMAZcCIDR: 10.3.49.0/24
+      SubnetSharedServicesVPCTier1AZaCIDR: 10.2.1.0/24
+      SubnetSharedServicesVPCTier1AZbCIDR: 10.2.21.0/24
+      SubnetSharedServicesVPCTier1AZcCIDR: 10.2.41.0/24
+      SubnetSharedServicesVPCTier2AZaCIDR: 10.2.2.0/24
+      SubnetSharedServicesVPCTier2AZbCIDR: 10.2.22.0/24
+      SubnetSharedServicesVPCTier2AZcCIDR: 10.2.42.0/24
+      SubnetSharedServicesVPCTier3AZaCIDR: 10.2.3.0/24
+      SubnetSharedServicesVPCTier3AZbCIDR: 10.2.23.0/24
+      SubnetSharedServicesVPCTier3AZcCIDR: 10.2.43.0/24
+      SubnetAFLMISVPCTomcatTierAza: 10.5.5.0/24
+      SubnetAFLMISVPCTomcatTierAzb: 10.5.25.0/24
+      SubnetAFLMISVPCTomcatTierAzc: 10.5.45.0/24
+      SubnetAFLMISVPCDatabaseTierAza: 10.5.6.0/24
+      SubnetAFLMISVPCDatabaseTierAzb: 10.5.26.0/24
+      SubnetAFLMISVPCDatabaseTierAzc: 10.5.46.0/24
+      SubnetAFLMISVPCUtilityTierAza: 10.5.11.0/24
+      SubnetAFLMISVPCUtilityTierAzb: 10.5.31.0/24
+      SubnetAFLMISVPCUtilityTierAzc: 10.5.51.0/24
+      SubnetAFLMISVPCEKSTierAza: 10.5.128.0/19
+      SubnetAFLMISVPCEKSTierAzb: 10.5.160.0/19
+      SubnetAFLMISVPCEKSTierAzc: 10.5.192.0/19
+      SubnetAFLMISVPCLambdaAza: 10.5.10.0/24
+      SubnetAFLMISVPCLambdaAzb: 10.5.30.0/24
+      SubnetAFLMISVPCLambdaAzc: 10.5.50.0/24
+    Region2-Production:
+      ManagementVPCCIDR: 10.101.0.0/16
+      ApplicationVPCCIDR: 10.103.0.0/16
+      CrossAccountVPCCIDR: 10.104.0.0/16
+      SharedServicesVPCCIDR: 10.102.0.0/16
+      AllHostsCIDR: 10.0.0.0/8
+      SubnetApplicationVPCPublicAZaCIDR: 10.103.0.0/24
+      SubnetApplicationVPCPublicAZbCIDR: 10.103.20.0/24
+      SubnetApplicationVPCPublicAZcCIDR: 10.103.40.0/24
+      SubnetApplicationVPCThreatGatewayAZaCIDR: 10.103.1.0/24
+      SubnetApplicationVPCThreatGatewayAZbCIDR: 10.103.21.0/24
+      SubnetApplicationVPCThreatGatewayAZcCIDR: 10.103.41.0/24
+      SubnetApplicationVPCProxyAZaCIDR: 10.103.2.0/24
+      SubnetApplicationVPCProxyAZbCIDR: 10.103.22.0/24
+      SubnetApplicationVPCProxyAZcCIDR: 10.103.42.0/24
+      SubnetApplicationVPCCacheAZaCIDR: 10.103.3.0/24
+      SubnetApplicationVPCCacheAZbCIDR: 10.103.23.0/24
+      SubnetApplicationVPCCacheAZcCIDR: 10.103.43.0/24
+      SubnetApplicationVPCWebAZaCIDR: 10.103.4.0/24
+      SubnetApplicationVPCWebAZbCIDR: 10.103.24.0/24
+      SubnetApplicationVPCWebAZcCIDR: 10.103.44.0/24
+      SubnetApplicationVPCAppAZaCIDR: 10.103.5.0/24
+      SubnetApplicationVPCAppAZbCIDR: 10.103.25.0/24
+      SubnetApplicationVPCAppAZcCIDR: 10.103.45.0/24
+      SubnetApplicationVPCDatabaseAZaCIDR: 10.103.6.0/24
+      SubnetApplicationVPCDatabaseAZbCIDR: 10.103.26.0/24
+      SubnetApplicationVPCDatabaseAZcCIDR: 10.103.46.0/24
+      SubnetApplicationVPCStorageAZaCIDR: 10.103.7.0/24
+      SubnetApplicationVPCStorageAZbCIDR: 10.103.27.0/24
+      SubnetApplicationVPCStorageAZcCIDR: 10.103.47.0/24
+      SubnetApplicationVPCCryptoAZaCIDR: 10.103.8.0/24
+      SubnetApplicationVPCCryptoAZbCIDR: 10.103.28.0/24
+      SubnetApplicationVPCCryptoAZcCIDR: 10.103.48.0/24
+      SubnetApplicationVPCHSMAZaCIDR: 10.103.9.0/24
+      SubnetApplicationVPCHSMAZbCIDR: 10.103.29.0/24
+      SubnetApplicationVPCHSMAZcCIDR: 10.103.49.0/24
+      SubnetSharedServicesVPCTier1AZaCIDR: 10.102.1.0/24
+      SubnetSharedServicesVPCTier1AZbCIDR: 10.102.21.0/24
+      SubnetSharedServicesVPCTier1AZcCIDR: 10.102.41.0/24
+      SubnetSharedServicesVPCTier2AZaCIDR: 10.102.2.0/24
+      SubnetSharedServicesVPCTier2AZbCIDR: 10.102.22.0/24
+      SubnetSharedServicesVPCTier2AZcCIDR: 10.102.42.0/24
+      SubnetSharedServicesVPCTier3AZaCIDR: 10.102.3.0/24
+      SubnetSharedServicesVPCTier3AZbCIDR: 10.102.23.0/24
+      SubnetSharedServicesVPCTier3AZcCIDR: 10.102.43.0/24
+      SubnetAFLMISVPCTomcatTierAza: 10.105.5.0/24
+      SubnetAFLMISVPCTomcatTierAzb: 10.105.25.0/24
+      SubnetAFLMISVPCTomcatTierAzc: 10.105.45.0/24
+      SubnetAFLMISVPCDatabaseTierAza: 10.105.6.0/24
+      SubnetAFLMISVPCDatabaseTierAzb: 10.105.26.0/24
+      SubnetAFLMISVPCDatabaseTierAzc: 10.105.46.0/24
+      SubnetAFLMISVPCUtilityTierAza: 10.105.11.0/24
+      SubnetAFLMISVPCUtilityTierAzb: 10.105.31.0/24
+      SubnetAFLMISVPCUtilityTierAzc: 10.105.51.0/24
+      SubnetAFLMISVPCEKSTierAza: 10.105.128.0/19
+      SubnetAFLMISVPCEKSTierAzb: 10.105.160.0/19
+      SubnetAFLMISVPCEKSTierAzc: 10.105.192.0/19
+      SubnetAFLMISVPCLambdaAza: 10.105.10.0/24
+      SubnetAFLMISVPCLambdaAzb: 10.105.30.0/24
+      SubnetAFLMISVPCLambdaAzc: 10.105.50.0/24
+    Model:
+      AllHostsCIDR: 10.0.0.0/8
+      ManagementVPCCIDR: 10.201.0.0/16
+      ApplicationVPCCIDR: 10.203.0.0/16
+      CrossAccountVPCCIDR: 10.204.0.0/16
+      SharedServicesVPCCIDR: 10.202.0.0/16
+      SubnetApplicationVPCPublicAZaCIDR: 10.203.0.0/24
+      SubnetApplicationVPCPublicAZbCIDR: 10.203.20.0/24
+      SubnetApplicationVPCPublicAZcCIDR: 10.203.40.0/24
+      SubnetApplicationVPCThreatGatewayAZaCIDR: 10.203.1.0/24
+      SubnetApplicationVPCThreatGatewayAZbCIDR: 10.203.21.0/24
+      SubnetApplicationVPCThreatGatewayAZcCIDR: 10.203.41.0/24
+      SubnetApplicationVPCProxyAZaCIDR: 10.203.2.0/24
+      SubnetApplicationVPCProxyAZbCIDR: 10.203.22.0/24
+      SubnetApplicationVPCProxyAZcCIDR: 10.203.42.0/24
+      SubnetApplicationVPCCacheAZaCIDR: 10.203.3.0/24
+      SubnetApplicationVPCCacheAZbCIDR: 10.203.23.0/24
+      SubnetApplicationVPCCacheAZcCIDR: 10.203.43.0/24
+      SubnetApplicationVPCWebAZaCIDR: 10.203.4.0/24
+      SubnetApplicationVPCWebAZbCIDR: 10.203.24.0/24
+      SubnetApplicationVPCWebAZcCIDR: 10.203.44.0/24
+      SubnetApplicationVPCAppAZaCIDR: 10.203.5.0/24
+      SubnetApplicationVPCAppAZbCIDR: 10.203.25.0/24
+      SubnetApplicationVPCAppAZcCIDR: 10.203.45.0/24
+      SubnetApplicationVPCDatabaseAZaCIDR: 10.203.6.0/24
+      SubnetApplicationVPCDatabaseAZbCIDR: 10.203.26.0/24
+      SubnetApplicationVPCDatabaseAZcCIDR: 10.203.46.0/24
+      SubnetApplicationVPCStorageAZaCIDR: 10.203.7.0/24
+      SubnetApplicationVPCStorageAZbCIDR: 10.203.27.0/24
+      SubnetApplicationVPCStorageAZcCIDR: 10.203.47.0/24
+      SubnetApplicationVPCCryptoAZaCIDR: 10.203.8.0/24
+      SubnetApplicationVPCCryptoAZbCIDR: 10.203.28.0/24
+      SubnetApplicationVPCCryptoAZcCIDR: 10.203.48.0/24
+      SubnetApplicationVPCHSMAZaCIDR: 10.203.9.0/24
+      SubnetApplicationVPCHSMAZbCIDR: 10.203.29.0/24
+      SubnetApplicationVPCHSMAZcCIDR: 10.203.49.0/24
+      SubnetSharedServicesVPCTier1AZaCIDR: 10.202.1.0/24
+      SubnetSharedServicesVPCTier1AZbCIDR: 10.202.21.0/24
+      SubnetSharedServicesVPCTier1AZcCIDR: 10.202.41.0/24
+      SubnetSharedServicesVPCTier2AZaCIDR: 10.202.2.0/24
+      SubnetSharedServicesVPCTier2AZbCIDR: 10.202.22.0/24
+      SubnetSharedServicesVPCTier2AZcCIDR: 10.202.42.0/24
+      SubnetSharedServicesVPCTier3AZaCIDR: 10.202.3.0/24
+      SubnetSharedServicesVPCTier3AZbCIDR: 10.202.23.0/24
+      SubnetSharedServicesVPCTier3AZcCIDR: 10.202.43.0/24
+      SubnetAFLMISVPCTomcatTierAza: 10.205.5.0/24
+      SubnetAFLMISVPCTomcatTierAzb: 10.205.25.0/24
+      SubnetAFLMISVPCTomcatTierAzc: 10.205.45.0/24
+      SubnetAFLMISVPCDatabaseTierAza: 10.205.6.0/24
+      SubnetAFLMISVPCDatabaseTierAzb: 10.205.26.0/24
+      SubnetAFLMISVPCDatabaseTierAzc: 10.205.46.0/24
+      SubnetAFLMISVPCUtilityTierAza: 10.205.11.0/24
+      SubnetAFLMISVPCUtilityTierAzb: 10.205.31.0/24
+      SubnetAFLMISVPCUtilityTierAzc: 10.205.51.0/24
+      SubnetAFLMISVPCEKSTierAza: 10.205.128.0/19
+      SubnetAFLMISVPCEKSTierAzb: 10.205.160.0/19
+      SubnetAFLMISVPCEKSTierAzc: 10.205.192.0/19
+      SubnetAFLMISVPCLambdaAza: 10.205.10.0/24
+      SubnetAFLMISVPCLambdaAzb: 10.205.30.0/24
+      SubnetAFLMISVPCLambdaAzc: 10.205.50.0/24
+    Region2-Model:
+      AllHostsCIDR: 10.0.0.0/8
+      ManagementVPCCIDR: 10.211.0.0/16
+      ApplicationVPCCIDR: 10.213.0.0/16
+      CrossAccountVPCCIDR: 10.214.0.0/16
+      SharedServicesVPCCIDR: 10.212.0.0/16
+      SubnetApplicationVPCPublicAZaCIDR: 10.213.0.0/24
+      SubnetApplicationVPCPublicAZbCIDR: 10.213.20.0/24
+      SubnetApplicationVPCPublicAZcCIDR: 10.213.40.0/24
+      SubnetApplicationVPCThreatGatewayAZaCIDR: 10.213.1.0/24
+      SubnetApplicationVPCThreatGatewayAZbCIDR: 10.213.21.0/24
+      SubnetApplicationVPCThreatGatewayAZcCIDR: 10.213.41.0/24
+      SubnetApplicationVPCProxyAZaCIDR: 10.213.2.0/24
+      SubnetApplicationVPCProxyAZbCIDR: 10.213.22.0/24
+      SubnetApplicationVPCProxyAZcCIDR: 10.213.42.0/24
+      SubnetApplicationVPCCacheAZaCIDR: 10.213.3.0/24
+      SubnetApplicationVPCCacheAZbCIDR: 10.213.23.0/24
+      SubnetApplicationVPCCacheAZcCIDR: 10.213.43.0/24
+      SubnetApplicationVPCWebAZaCIDR: 10.213.4.0/24
+      SubnetApplicationVPCWebAZbCIDR: 10.213.24.0/24
+      SubnetApplicationVPCWebAZcCIDR: 10.213.44.0/24
+      SubnetApplicationVPCAppAZaCIDR: 10.213.5.0/24
+      SubnetApplicationVPCAppAZbCIDR: 10.213.25.0/24
+      SubnetApplicationVPCAppAZcCIDR: 10.213.45.0/24
+      SubnetApplicationVPCDatabaseAZaCIDR: 10.213.6.0/24
+      SubnetApplicationVPCDatabaseAZbCIDR: 10.213.26.0/24
+      SubnetApplicationVPCDatabaseAZcCIDR: 10.213.46.0/24
+      SubnetApplicationVPCStorageAZaCIDR: 10.213.7.0/24
+      SubnetApplicationVPCStorageAZbCIDR: 10.213.27.0/24
+      SubnetApplicationVPCStorageAZcCIDR: 10.213.47.0/24
+      SubnetApplicationVPCCryptoAZaCIDR: 10.213.8.0/24
+      SubnetApplicationVPCCryptoAZbCIDR: 10.213.28.0/24
+      SubnetApplicationVPCCryptoAZcCIDR: 10.213.48.0/24
+      SubnetApplicationVPCHSMAZaCIDR: 10.213.9.0/24
+      SubnetApplicationVPCHSMAZbCIDR: 10.213.29.0/24
+      SubnetApplicationVPCHSMAZcCIDR: 10.213.49.0/24
+      SubnetSharedServicesVPCTier1AZaCIDR: 10.212.1.0/24
+      SubnetSharedServicesVPCTier1AZbCIDR: 10.212.21.0/24
+      SubnetSharedServicesVPCTier1AZcCIDR: 10.212.41.0/24
+      SubnetSharedServicesVPCTier2AZaCIDR: 10.212.2.0/24
+      SubnetSharedServicesVPCTier2AZbCIDR: 10.212.22.0/24
+      SubnetSharedServicesVPCTier2AZcCIDR: 10.212.42.0/24
+      SubnetSharedServicesVPCTier3AZaCIDR: 10.212.3.0/24
+      SubnetSharedServicesVPCTier3AZbCIDR: 10.212.23.0/24
+      SubnetSharedServicesVPCTier3AZcCIDR: 10.212.43.0/24
+      SubnetAFLMISVPCTomcatTierAza: 10.215.5.0/24
+      SubnetAFLMISVPCTomcatTierAzb: 10.215.25.0/24
+      SubnetAFLMISVPCTomcatTierAzc: 10.215.45.0/24
+      SubnetAFLMISVPCDatabaseTierAza: 10.215.6.0/24
+      SubnetAFLMISVPCDatabaseTierAzb: 10.215.26.0/24
+      SubnetAFLMISVPCDatabaseTierAzc: 10.215.46.0/24
+      SubnetAFLMISVPCUtilityTierAza: 10.215.11.0/24
+      SubnetAFLMISVPCUtilityTierAzb: 10.215.31.0/24
+      SubnetAFLMISVPCUtilityTierAzc: 10.215.51.0/24
+      SubnetAFLMISVPCEKSTierAza: 10.215.128.0/19
+      SubnetAFLMISVPCEKSTierAzb: 10.215.160.0/19
+      SubnetAFLMISVPCEKSTierAzc: 10.215.192.0/19
+      SubnetAFLMISVPCLambdaAza: 10.215.10.0/24
+      SubnetAFLMISVPCLambdaAzb: 10.215.30.0/24
+      SubnetAFLMISVPCLambdaAzc: 10.215.50.0/24
+
+Conditions:
+  CreateFriendlyDNS: !Equals
+    - !Ref FriendlyDNSRequired
+    - Yes
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - EnvironmentValue
+      - Label:
+          default: ElasticSearch Configuration
+        Parameters:
+          - BuildNumber
+          - AFLMISVPCStackName
+          - EKSManagerIAMRole
+          - EKSWorkerIAMRole
+          - EKSManagerSecurityGroup
+          - EKSWorkerSecurityGroup
+      - Label:
+          default: CloudFront Configuration
+        Parameters:
+          - DistributionDescription
+          - AliasDomain
+          - CertificateArn
+          - ThumbnailsS3BucketName
+          - AccessLogBucket
+          - AccessLogPrefix
+          - WAFACLID
+          - OriginAccessIdentity
+      - Label:
+          default: DNS Requirements
+        Parameters:
+          - FriendlyDNSRequired
+          - FriendlyDNSName
+          - ExternalZoneId
+      - Label:
+          default: CloudFront TTL Configuration
+        Parameters:
+          - EPGThumbnailMinTTL
+          - EPGThumbnailMaxTTL
+          - EPGThumbnailDefaultTTL
+    ParameterLabels:
+      EnvironmentValue:
+        default: Which Environment are you building ?
+
+Resources:
+## Create security groups
+  EPGESSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security Group for the EPG Elastic Search Cluster
+      VpcId:
+        'Fn::ImportValue': !Sub '${AFLMISVPCStackName}-VPCID'
+      SecurityGroupIngress:
+        - IpProtocol: TCP
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: !FindInMap
+            - SubnetCIDR
+            - !Ref EnvironmentValue
+            - SubnetAFLMISVPCLambdaAza
+          Description: ElasticSearch Access from Lambda
+        - IpProtocol: TCP
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: !FindInMap
+            - SubnetCIDR
+            - !Ref EnvironmentValue
+            - SubnetAFLMISVPCLambdaAzb
+          Description: ElasticSearch Access from Lambda
+        - IpProtocol: TCP
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: !FindInMap
+            - SubnetCIDR
+            - !Ref EnvironmentValue
+            - SubnetAFLMISVPCLambdaAzc
+          Description: ElasticSearch Access from Lambda
+        - IpProtocol: icmp
+          FromPort: '8'
+          ToPort: '-1'
+          CidrIp: !FindInMap
+            - SubnetCIDR
+            - !Ref EnvironmentValue
+            - AllHostsCIDR
+          Description: ICMP Access from All Tier
+      SecurityGroupEgress:
+        - IpProtocol: icmp
+          FromPort: '8'
+          ToPort: '-1'
+          CidrIp: !FindInMap
+            - SubnetCIDR
+            - !Ref EnvironmentValue
+            - AllHostsCIDR
+          Description: Allow all ICMP Traffic Outbound to Internet
+      Tags:
+        - Key: Name
+          Value: EPGES-SecurityGroup
+        - Key: Build
+          Value: !Ref 'AWS::StackName'
+
+  SecurityGroupInboundRule1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Inbound From MIS EKS WorkerNode Security Group
+      IpProtocol: TCP
+      FromPort: 443
+      ToPort: 443
+      GroupId: !Ref EPGESSecurityGroup
+      SourceSecurityGroupId: !Ref EKSWorkerSecurityGroup
+
+  SecurityGroupInboundRule2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Inbound From MIS EKS Manager Security Group
+      IpProtocol: TCP
+      FromPort: 443
+      ToPort: 443
+      GroupId: !Ref EPGESSecurityGroup
+      SourceSecurityGroupId: !Ref EKSManagerSecurityGroup
+
+## Create Elastic Search Domain
+  EPGElasticSearch:
+    Type: 'AWS::Elasticsearch::Domain'
+    Properties:
+      AccessPolicies:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt EPGIAMRole.Arn
+                - !Ref EKSManagerIAMRole
+            Action: 'es:*'
+            Resource:
+              - !Join [ '', ['arn:aws:es:', !Ref "AWS::Region",':',!Ref "AWS::AccountId",':domain/*']]
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+      EncryptionAtRestOptions:
+        Enabled: true
+      EBSOptions:
+        EBSEnabled: true
+        VolumeSize: '20'
+        VolumeType: gp2
+      ElasticsearchClusterConfig:
+        DedicatedMasterCount: '3'
+        InstanceCount: '3'
+        DedicatedMasterEnabled: 'true'
+        DedicatedMasterType: m6g.xlarge.search
+        InstanceType: m6g.xlarge.search
+        ZoneAwarenessEnabled: 'true'
+        ZoneAwarenessConfig:
+          AvailabilityZoneCount: 3
+      ElasticsearchVersion: '7.10'
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: '10'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - epg-es-cluster-
+              - !Ref BuildNumber
+        - Key: Application
+          Value: ElasticSearch
+        - Key: Tier
+          Value: ApplicationTier
+        - Key: Function
+          Value: ElasticSearch
+        - Key: Build
+          Value: !Ref 'AWS::StackName'
+        - Key: Product
+          Value: EPG
+        - Key: BillingEnvironment
+          Value: !FindInMap
+            - Environments
+            - !Ref EnvironmentValue
+            - BillingEnvironmentTag
+      VPCOptions:
+        SecurityGroupIds:
+          - !Ref EPGESSecurityGroup
+        SubnetIds:
+        - 'Fn::ImportValue': !Sub '${AFLMISVPCStackName}-SubnetTomcatAZa'
+        - 'Fn::ImportValue': !Sub '${AFLMISVPCStackName}-SubnetTomcatAZb'
+        - 'Fn::ImportValue': !Sub '${AFLMISVPCStackName}-SubnetTomcatAZc'
+
+## IAM Role Creation
+  EPGIAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Principal:
+              Service: ec2.amazonaws.com
+            Effect: Allow
+            Sid: EC2AssumeRole
+          - Action: 'sts:AssumeRole'
+            Principal:
+              AWS: !Ref EKSWorkerIAMRole
+            Effect: Allow
+            Sid: EKSWorkerAssumeRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/CloudWatchFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonSSMFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess'
+        - 'arn:aws:iam::aws:policy/IAMReadOnlyAccess'
+      RoleName: !Join
+        - ''
+        - - Role-
+          - !Ref 'AWS::StackName'
+          - '-'
+          - !Ref BuildNumber
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+
+  EPGESSnapshotRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - es.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+      - PolicyName: AmazonS3Access
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:ListBucket
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            Resource:
+              - !Join [ '', ['arn:aws:s3:::', !Ref 'S3ESBackup'] ]
+              - !Join [ '', ['arn:aws:s3:::', !Ref 'S3ESBackup', /*] ]
+      RoleName: !Join
+        - ''
+        - - EPGESSnapshotRole-
+          - !Ref 'AWS::StackName'
+      Tags:
+        - Key: CreatedBy
+          Value: !Ref AWS::StackName
+
+## Access Policies
+  EPGElasticSearchAccessPolicy:
+    #Description: IAM Policy Elastic Search for AFL EKS Worker Nodes
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: !Join
+        - ''
+        - - EPG-ES-Policy
+          - '-'
+          - !Ref BuildNumber
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'es:ESHttpDelete'
+              - 'es:ESHttpGet'
+              - 'es:ESHttpHead'
+              - 'es:ESHttpPost'
+              - 'es:ESHttpPut'
+            Resource:
+              - !GetAtt EPGElasticSearch.Arn
+            Sid: EPGElasticSearch
+      Roles:
+        - !Ref EPGIAMRole
+
+  EPGS3Policy:
+    Type: 'AWS::IAM::Policy'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F11
+            reason: "Policy is applied to a group but also directly to a service account which triggers an error in cfn_nag"
+    Properties:
+      PolicyName: !Join
+        - ''
+        - - EPG-S3-Policy
+          - '-'
+          - !Ref BuildNumber
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:DeleteObject'
+              - 's3:ListBucket'
+              - 's3:ListAllMyBuckets'
+            Resource:
+              - !Join [ '', ['arn:aws:s3:::', !FindInMap [Environments, !Ref EnvironmentValue, s3epguploads]] ]
+              - !Join [ '', ['arn:aws:s3:::', !FindInMap [Environments, !Ref EnvironmentValue, s3epguploads], /*] ]
+      Roles:
+        - !Ref EPGIAMRole
+      Users:
+        - !Ref RobotUserId
+
+## Create KMS Key to use to encrypt SNS at rest
+  SNSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: EPG CMK used to encrypt SNS at rest
+      Enabled: true
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: allow-root-access-to-key
+        Statement:
+        -
+          Sid: allow-root-to-delegate-actions
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - kms:*
+          Resource: '*'
+        -
+          Sid: "Allow SNS service to use Key"
+          Effect: "Allow"
+          Principal:
+            Service: 'sns.amazonaws.com'
+          Action:
+            - "kms:Decrypt"
+            - "kms:GenerateDataKey*"
+          Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - EPGSNSKey-
+              - !Ref 'AWS::StackName'
+              - '-'
+              - !Ref EnvironmentValue
+              - '-'
+              - !Ref BuildNumber
+
+## Define a KMS Alias for our key so we can reference it easily.
+  SNSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Join
+            - ''
+            - - alias/EPG-SNS-Encryption-
+              - !Ref BuildNumber
+      TargetKeyId: !Ref SNSKey
+
+## Create SNS Topic for EPG Processing
+  EPGProcessingNotify:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: !Join
+        - ''
+        - - !Ref EnvironmentValue
+          - '-EPGProcessing-'
+          - !Ref 'AWS::StackName'
+          - '-'
+          - !Ref BuildNumber
+      KmsMasterKeyId: !Ref SNSKey
+      TopicName: !Join
+        - ''
+        - - !Ref EnvironmentValue
+          - '-EPGProcessing-'
+          - !Ref 'AWS::StackName'
+          - '-'
+          - !Ref BuildNumber
+
+## Create CloudFront Distribution
+  CloudFrontDistribution:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Aliases:
+          Fn::Split:
+            - ","
+            - !Ref AliasDomain
+        Comment: !Ref DistributionDescription
+        Enabled: true
+        PriceClass: PriceClass_All
+        HttpVersion: http2
+        Logging:
+          Bucket: !Ref AccessLogBucket
+          Prefix: !Ref AccessLogPrefix
+        Origins:
+          - Id: S3-thumbnails
+            DomainName: !Ref ThumbnailsS3BucketName
+            S3OriginConfig:
+              OriginAccessIdentity: !Join [ '', ['origin-access-identity/cloudfront/', !Ref OriginAccessIdentity] ]
+        WebACLId: !Ref WAFACLID
+        DefaultCacheBehavior:
+          TargetOriginId: S3-thumbnails
+          ViewerProtocolPolicy: https-only
+          MaxTTL: !Ref EPGThumbnailMaxTTL
+          DefaultTTL: !Ref EPGThumbnailDefaultTTL
+          MinTTL: !Ref EPGThumbnailMinTTL
+          Compress: true
+          AllowedMethods:
+            - HEAD
+            - DELETE
+            - POST
+            - GET
+            - OPTIONS
+            - PUT
+            - PATCH
+          CachedMethods:
+            - HEAD
+            - GET
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            QueryString: true
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+            Locations: []
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2018
+      Tags:
+        - Key: Product
+          Value: EPG
+
+  FriendlyDNSRecord:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Condition: CreateFriendlyDNS
+    Properties:
+      HostedZoneId: !Ref ExternalZoneId
+      Comment: CloudFront Distribution Friendly DNS Name
+      RecordSets:
+        - Name: !Ref FriendlyDNSName
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt CloudFrontDistribution.DomainName
+
+Outputs:
+
+  EPGIAMRole:
+    Description: The EPG IAM Role
+    Value: !GetAtt EPGIAMRole.Arn
+
+  SNSTopic:
+    Description: The ARN of the SNS topic
+    Value: !Ref EPGProcessingNotify
+
+  CloudFrontDistribution:
+    Description: The ARN of the CloudFront Distribution
+    Value: !Ref CloudFrontDistribution

@@ -1,0 +1,317 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to create custom rule groups for WAF
+
+Parameters:
+  EnvironmentValue:
+    AllowedValues:
+      - Model
+      - Production
+      - Region2-Production
+      - Region2-Model
+    Default: Model
+    Type: String
+
+Mappings:
+  Environments:
+    Production:
+      GoogleHomeCloudFrontID: d1pd2k5dcbd83l.cloudfront.net
+      NotificationCloudFrontID: d8bhkpul57wei.cloudfront.net
+    Region2-Production:
+      GoogleHomeCloudFrontID: ""
+      NotificationCloudFrontID: ""
+    Model:
+      GoogleHomeCloudFrontID: d3igoyt4xyuzjv.cloudfront.net
+      NotificationCloudFrontID: dkytmyfgrxn74.cloudfront.net
+    Region2-Model:
+      GoogleHomeCloudFrontID: ""
+      NotificationCloudFrontID: ""
+
+Resources:
+  WAFRuleGroup1:
+    Type: AWS::WAFv2::RuleGroup
+    Properties:
+      Name: AFLCustomRuleGroup1
+      Scope: CLOUDFRONT
+      Description: Block JNDI, WordPress, aflrender
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: AFLWAFRuleMetrics-CloudFront
+      Capacity: 1500
+      Rules:
+        - Name: Block_JNDI
+          Priority: 1
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockingUserAgent_jndi
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: user-agent
+                    PositionalConstraint: CONTAINS
+                    SearchString: jndi
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath:
+                        Name: x_forwarded_for
+                    PositionalConstraint: CONTAINS
+                    SearchString: jndi
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: jndi
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: jndi
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+        - Name: Block_WordPress
+          Priority: 2
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockingWordPress
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: wordpress
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: wp-admin
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: wp-content
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: wp-login
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: wp-includes
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+        - Name: Block_Other_AFL
+          Priority: 3
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockingOther_AFL
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: /api/cfs
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: /aflrender
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+  WAFRuleGroup2:
+    Type: AWS::WAFv2::RuleGroup
+    Properties:
+      Name: AFLCustomRuleGroup2
+      Scope: CLOUDFRONT
+      Description: All specific cookies
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: AFLWAFRuleMetrics-CloudFront
+      Capacity: 1500
+      Rules:
+        - Name: AllowBasedOnCookie
+          Priority: 1
+          Action:
+            Allow: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AllowBasedOnCookie
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    PositionalConstraint: CONTAINS_WORD
+                    SearchString: ajs_user_id
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    PositionalConstraint: CONTAINS_WORD
+                    SearchString: ajs_group_id
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+  WAFRuleGroup3:
+    Type: AWS::WAFv2::RuleGroup
+    Properties:
+      Name: AFLCustomRuleGroup3
+      Scope: CLOUDFRONT
+      Description: Allow Non-CDN domains, All R53 healthchecks, Block Non-CDN Traffic
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: AFLWAFRuleMetrics-CloudFront
+      Capacity: 1500
+      Rules:
+        - Name: AllowDomainsNotThroughCDN
+          Priority: 1
+          Action:
+            Allow: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AllowDomainsNotThroughCDN
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: host
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: mediaservices.com.au
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: host
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: !FindInMap [Environments, !Ref EnvironmentValue, GoogleHomeCloudFrontID]
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: host
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: !FindInMap [Environments, !Ref EnvironmentValue, NotificationCloudFrontID]
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: host
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: notification.afl.uat1.testafl.com
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+        - Name: Allow_R53_healthchecks
+          Priority: 2
+          Action:
+            Allow: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: Allow_R53_healthchecks
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: sw.js
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: r53checker
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+        - Name: Block_Non_CDN_Traffic
+          Priority: 3
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: Block_Non_CDN_Traffic
+          Statement:
+            ByteMatchStatement:
+              FieldToMatch:
+                SingleHeader:
+                  Name: originrequest
+              PositionalConstraint: EXACTLY
+              SearchString: true
+              TextTransformations:
+                - Priority: 0
+                  Type: LOWERCASE
